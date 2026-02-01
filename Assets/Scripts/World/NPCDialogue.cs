@@ -21,6 +21,14 @@ namespace FieldFriends.World
 
         bool _inRange;
 
+        /// <summary>
+        /// Set dialogue at runtime (used by AreaSceneSetup).
+        /// </summary>
+        public void SetDialogue(string text)
+        {
+            dialogue = text;
+        }
+
         void Update()
         {
             if (!_inRange) return;

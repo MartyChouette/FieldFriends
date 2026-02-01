@@ -12,24 +12,7 @@ namespace FieldFriends.Save
     /// </summary>
     public class SaveManager : MonoBehaviour
     {
-        const string SaveFileName = "fieldfriends_save.json";
-
-        string SavePath => Path.Combine(Application.persistentDataPath, SaveFileName);
-
-        void OnEnable()
-        {
-            AreaManager.OnAreaChanged += OnAreaChanged;
-        }
-
-        void OnDisable()
-        {
-            AreaManager.OnAreaChanged -= OnAreaChanged;
-        }
-
-        void OnAreaChanged(Data.AreaID newArea)
-        {
-            AutoSave();
-        }
+        string SavePath => Path.Combine(Application.persistentDataPath, GameConstants.SaveFileName);
 
         public void AutoSave()
         {

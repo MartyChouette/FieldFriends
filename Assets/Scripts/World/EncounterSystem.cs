@@ -16,7 +16,7 @@ namespace FieldFriends.World
         [SerializeField] AreaManager areaManager;
 
         [Header("Tuning")]
-        [SerializeField] int minStepsBetweenEncounters = 3;
+        [SerializeField] int minStepsBetweenEncounters = GameConstants.MinStepsBetweenEncounters;
 
         int _stepsSinceLastEncounter;
 
@@ -65,7 +65,7 @@ namespace FieldFriends.World
             var partyManager = FindFirstObjectByType<Party.PartyManager>();
             if (partyManager != null && partyManager.PartyHasAbility(AbilityID.ScoutAhead))
             {
-                baseRate *= 0.5f;
+                baseRate *= GameConstants.ScoutAheadModifier;
             }
             return baseRate;
         }

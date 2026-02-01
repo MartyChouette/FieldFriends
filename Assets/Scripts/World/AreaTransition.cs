@@ -14,6 +14,15 @@ namespace FieldFriends.World
         [SerializeField] AreaID targetArea;
         [SerializeField] Vector2Int spawnGridPosition;
 
+        /// <summary>
+        /// Set target at runtime (used by AreaSceneSetup).
+        /// </summary>
+        public void SetTarget(AreaID area, Vector2Int spawnPos)
+        {
+            targetArea = area;
+            spawnGridPosition = spawnPos;
+        }
+
         void OnTriggerEnter2D(Collider2D other)
         {
             if (!other.CompareTag("Player")) return;
