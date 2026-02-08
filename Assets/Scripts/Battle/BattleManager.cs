@@ -2,6 +2,7 @@ using UnityEngine;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using FieldFriends.Core;
 using FieldFriends.Data;
 using FieldFriends.Party;
 
@@ -49,7 +50,7 @@ namespace FieldFriends.Battle
             if (battleUI != null)
             {
                 battleUI.Initialize(_playerCreature, _enemyCreature);
-                battleUI.ShowText(_enemyCreature.SpeciesName + " appeared.");
+                battleUI.ShowText(BattleTextProvider.EncounterStart(_enemyCreature.SpeciesName));
             }
 
             StartCoroutine(BattleLoop());
@@ -57,9 +58,10 @@ namespace FieldFriends.Battle
 
         IEnumerator BattleLoop()
         {
+            yield return new WaitForSeconds(1.2f);
+
             while (_state == BattleState.Active)
             {
-                // Determine turn order by SPD
                 bool playerFirst = _playerCreature.SPD >= _enemyCreature.SPD;
 
                 if (playerFirst)
@@ -75,7 +77,6 @@ namespace FieldFriends.Battle
                     yield return PlayerTurn();
                 }
 
-                // Check end conditions
                 if (_enemyCreature.IsResting)
                 {
                     yield return HandleWin();
@@ -93,7 +94,6 @@ namespace FieldFriends.Battle
         {
             if (_playerCreature.IsResting) yield break;
 
-            // Show menu and wait for input
             _waitingForInput = true;
             if (battleUI != null)
                 battleUI.ShowMenu(true);
@@ -113,20 +113,19 @@ namespace FieldFriends.Battle
                 case BattleAction.Wait:
                     FriendshipTracker.OnWaitUsed(_playerCreature);
 
-                    // Still's ability: chance to nullify enemy turn
                     bool nullify = _playerCreature.ActiveAbility == AbilityID.Wait
-                                   && Random.value < 0.3f;
+                                   && Random.value < GameConstants.StillWaitNullifyChance;
 
                     if (nullify)
                     {
                         if (battleUI != null)
-                            battleUI.ShowText(_playerCreature.SpeciesName + " holds steady.");
+                            battleUI.ShowText(BattleTextProvider.StillNullifies());
                         _state = BattleState.WaitNullify;
                     }
                     else
                     {
                         if (battleUI != null)
-                            battleUI.ShowText(_playerCreature.SpeciesName + " waits.");
+                            battleUI.ShowText(BattleTextProvider.WaitAction(_playerCreature.SpeciesName));
                     }
                     yield return new WaitForSeconds(0.8f);
                     if (_state == BattleState.WaitNullify)
@@ -144,11 +143,12 @@ namespace FieldFriends.Battle
             if (_enemyCreature.IsResting) yield break;
             if (_state == BattleState.WaitNullify) yield break;
 
-            // Petalyn's Calm Field: reduce enemy aggression (chance enemy waits)
-            if (_partyManager.PartyHasAbility(AbilityID.CalmField) && Random.value < 0.2f)
+            // Petalyn's Calm Field: reduce enemy aggression
+            if (_partyManager.PartyHasAbility(AbilityID.CalmField)
+                && Random.value < (1f - GameConstants.PetalynCalmFieldModifier))
             {
                 if (battleUI != null)
-                    battleUI.ShowText(_enemyCreature.SpeciesName + " hesitates.");
+                    battleUI.ShowText(BattleTextProvider.CalmFieldActive(_enemyCreature.SpeciesName));
                 yield return new WaitForSeconds(0.8f);
                 yield break;
             }
@@ -159,61 +159,114 @@ namespace FieldFriends.Battle
         IEnumerator ExecuteMove(CreatureInstance attacker, CreatureInstance defender, bool isPlayer)
         {
             int damage = CalculateDamage(attacker, defender);
+            float typeMult = TypeChart.GetMultiplier(attacker.Type, defender.Type);
+
+            string attackText = isPlayer
+                ? BattleTextProvider.MoveAttack(attacker.SpeciesName)
+                : BattleTextProvider.EnemyAttack(attacker.SpeciesName);
+
+            if (battleUI != null)
+                battleUI.ShowText(attackText);
+
+            if (Audio.AudioManager.Instance != null)
+                Audio.AudioManager.Instance.PlayHit();
+
+            yield return new WaitForSeconds(0.6f);
+
             defender.TakeDamage(damage);
 
-            string text = attacker.SpeciesName + " nudges forward.";
-            if (battleUI != null)
+            if (typeMult > 1f)
             {
-                battleUI.ShowText(text);
-                battleUI.UpdateHP();
+                if (battleUI != null)
+                    battleUI.ShowText(BattleTextProvider.StrongHit(defender.SpeciesName));
+            }
+            else if (typeMult < 1f)
+            {
+                if (battleUI != null)
+                    battleUI.ShowText(BattleTextProvider.WeakHit(defender.SpeciesName));
+            }
+            else
+            {
+                if (battleUI != null)
+                    battleUI.ShowText(BattleTextProvider.TakeDamage(defender.SpeciesName));
             }
 
-            yield return new WaitForSeconds(1.0f);
+            if (battleUI != null)
+                battleUI.UpdateHP();
+
+            yield return new WaitForSeconds(0.6f);
+
+            // Bramblet's Snare Step: chance to slow
+            if (isPlayer && attacker.HasAbility(AbilityID.SnareStep) && Random.value < 0.25f)
+            {
+                if (battleUI != null)
+                    battleUI.ShowText(BattleTextProvider.SnareStepSlow());
+                yield return new WaitForSeconds(0.5f);
+            }
 
             if (defender.IsResting)
             {
-                string restText = defender.SpeciesName + " needs to rest.";
                 if (battleUI != null)
-                    battleUI.ShowText(restText);
+                    battleUI.ShowText(BattleTextProvider.NeedsRest(defender.SpeciesName));
+
+                if (Audio.AudioManager.Instance != null)
+                    Audio.AudioManager.Instance.PlayRest();
+
                 yield return new WaitForSeconds(0.8f);
             }
         }
 
         /// <summary>
-        /// Damage formula: ATK * type_multiplier - DEF/2, minimum 1.
-        /// Kept simple and low-variance for calm battles.
+        /// Damage: BaseDamage + ATK * type_multiplier - DEF/2, minimum 1.
         /// </summary>
         int CalculateDamage(CreatureInstance attacker, CreatureInstance defender)
         {
             float typeMult = TypeChart.GetMultiplier(attacker.Type, defender.Type);
-            int raw = Mathf.RoundToInt(attacker.ATK * typeMult);
+            int raw = Mathf.RoundToInt((GameConstants.BaseDamage + attacker.ATK) * typeMult);
             int reduced = raw - (defender.DEF / 2);
             return Mathf.Max(1, reduced);
         }
 
         IEnumerator AttemptFlee()
         {
-            // Base 50% chance. Drift's Slip Away: guaranteed.
-            // Skirl's Quick Return: guaranteed once per area.
-            bool canFlee = _playerCreature.ActiveAbility == AbilityID.SlipAway
-                        || _playerCreature.ActiveAbility == AbilityID.QuickReturn
-                        || Random.value < 0.5f;
+            if (battleUI != null)
+                battleUI.ShowText(BattleTextProvider.BackAttempt());
 
-            // Wispin's Gentle Gust: bonus flee chance
+            yield return new WaitForSeconds(0.5f);
+
+            bool canFlee = _playerCreature.ActiveAbility == AbilityID.SlipAway;
+
+            if (!canFlee && _playerCreature.ActiveAbility == AbilityID.QuickReturn)
+            {
+                var abilityEffects = FindFirstObjectByType<World.AbilityEffects>();
+                if (abilityEffects != null)
+                    canFlee = abilityEffects.TryQuickReturn();
+            }
+
+            if (!canFlee)
+                canFlee = Random.value < GameConstants.BaseFleeChance;
+
             if (!canFlee && _partyManager.PartyHasAbility(AbilityID.GentleGust))
-                canFlee = Random.value < 0.3f;
+            {
+                canFlee = Random.value < GameConstants.WispinGustEvadeChance;
+                if (canFlee && battleUI != null)
+                {
+                    battleUI.ShowText(BattleTextProvider.GentleGustEvade());
+                    yield return new WaitForSeconds(0.5f);
+                }
+            }
 
             if (canFlee)
             {
                 if (battleUI != null)
-                    battleUI.ShowText("You head back for now.");
+                    battleUI.ShowText(BattleTextProvider.BackSuccess());
                 yield return new WaitForSeconds(0.8f);
                 EndBattle(false);
             }
             else
             {
                 if (battleUI != null)
-                    battleUI.ShowText("You can't get away.");
+                    battleUI.ShowText(BattleTextProvider.BackFail());
                 yield return new WaitForSeconds(0.8f);
             }
         }
@@ -221,19 +274,30 @@ namespace FieldFriends.Battle
         IEnumerator HandleWin()
         {
             if (battleUI != null)
-                battleUI.ShowText("You keep moving.");
+                battleUI.ShowText(BattleTextProvider.Win());
 
             // Ripplet's Clear Pool: post-battle heal
             if (_partyManager.PartyHasAbility(AbilityID.ClearPool))
             {
-                int healAmt = 3;
-                _playerCreature.Heal(healAmt);
                 yield return new WaitForSeconds(0.5f);
+                int healAmt = Mathf.Max(1, _playerCreature.MaxHP / 6);
+                _playerCreature.Heal(healAmt);
                 if (battleUI != null)
                 {
-                    battleUI.ShowText(_playerCreature.SpeciesName + " feels a bit better.");
+                    battleUI.ShowText(BattleTextProvider.ClearPoolHeal(_playerCreature.SpeciesName));
                     battleUI.UpdateHP();
                 }
+            }
+
+            // Check friendship milestone
+            if (FriendshipTracker.HasReachedUpgrade(_playerCreature)
+                && _playerCreature.UpgradeAbility != AbilityID.None)
+            {
+                yield return new WaitForSeconds(0.5f);
+                string abilityName = _playerCreature.UpgradeAbility.ToString();
+                if (battleUI != null)
+                    battleUI.ShowText(BattleTextProvider.AbilityUpgrade(
+                        _playerCreature.SpeciesName, abilityName));
             }
 
             yield return new WaitForSeconds(1.0f);
@@ -242,12 +306,14 @@ namespace FieldFriends.Battle
 
         IEnumerator HandlePlayerCreatureResting()
         {
-            // Try to swap in the next active creature
             var nextActive = _partyManager.GetActiveParty();
             if (nextActive.Count == 0)
             {
                 if (battleUI != null)
-                    battleUI.ShowText("You head back for now.");
+                    battleUI.ShowText(BattleTextProvider.AllResting());
+                yield return new WaitForSeconds(0.5f);
+                if (battleUI != null)
+                    battleUI.ShowText(BattleTextProvider.Lose());
                 yield return new WaitForSeconds(1.0f);
                 EndBattle(false);
                 yield break;
@@ -256,7 +322,7 @@ namespace FieldFriends.Battle
             _playerCreature = nextActive[0];
             if (battleUI != null)
             {
-                battleUI.ShowText(_playerCreature.SpeciesName + " steps forward.");
+                battleUI.ShowText(BattleTextProvider.SwapIn(_playerCreature.SpeciesName));
                 battleUI.SetPlayerCreature(_playerCreature);
             }
             yield return new WaitForSeconds(0.8f);
@@ -276,6 +342,9 @@ namespace FieldFriends.Battle
             if (!_waitingForInput) return;
             _selectedAction = action;
             _waitingForInput = false;
+
+            if (Audio.AudioManager.Instance != null)
+                Audio.AudioManager.Instance.PlayMenuSelect();
         }
     }
 

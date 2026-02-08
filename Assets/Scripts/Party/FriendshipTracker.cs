@@ -1,3 +1,5 @@
+using FieldFriends.Core;
+
 namespace FieldFriends.Party
 {
     /// <summary>
@@ -9,31 +11,34 @@ namespace FieldFriends.Party
     ///
     /// Milestones unlock upgraded abilities at threshold.
     /// Thresholds are hidden from the player.
+    /// All constants sourced from GameConstants.
     /// </summary>
     public static class FriendshipTracker
     {
-        public const int UpgradeThreshold = 100;
-        public const int WaitActionBonus = 3;
-        public const int RestAreaBonus = 10;
-        public const int WalkBonus = 1;
-        public const int LoyaltyBonus = 2; // when not swapped recently
-
         public static void OnWaitUsed(CreatureInstance creature)
         {
             if (creature == null || creature.IsResting) return;
-            creature.Friendship += WaitActionBonus;
+            creature.Friendship += GameConstants.FriendshipWaitBonus;
         }
 
         public static void OnRestAtHome(CreatureInstance creature)
         {
             if (creature == null) return;
-            creature.Friendship += RestAreaBonus;
+            creature.Friendship += GameConstants.FriendshipRestBonus;
+        }
+
+        public static void OnStep(CreatureInstance creature, bool loyal)
+        {
+            if (creature == null || creature.IsResting) return;
+            creature.Friendship += GameConstants.FriendshipWalkBonus;
+            if (loyal)
+                creature.Friendship += GameConstants.FriendshipLoyaltyBonus;
         }
 
         public static bool HasReachedUpgrade(CreatureInstance creature)
         {
             return creature.HasUpgrade &&
-                   creature.Friendship >= UpgradeThreshold;
+                   creature.Friendship >= GameConstants.FriendshipUpgradeThreshold;
         }
     }
 }

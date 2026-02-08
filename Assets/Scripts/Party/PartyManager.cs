@@ -10,7 +10,7 @@ namespace FieldFriends.Party
     /// </summary>
     public class PartyManager : MonoBehaviour
     {
-        public const int MaxPartySize = 3;
+        public const int MaxPartySize = Core.GameConstants.MaxPartySize;
 
         [SerializeField] List<CreatureInstance> party = new List<CreatureInstance>();
 
@@ -32,14 +32,11 @@ namespace FieldFriends.Party
         void OnStepTaken(Vector2Int pos)
         {
             _stepsSinceLastSwap++;
+            bool loyal = _stepsSinceLastSwap > Core.GameConstants.LoyaltyStepThreshold;
 
-            // Friendship increases by walking together.
-            // Not swapping often gives a bonus.
-            int bonus = _stepsSinceLastSwap > 20 ? 2 : 1;
             for (int i = 0; i < party.Count; i++)
             {
-                if (!party[i].IsResting)
-                    party[i].Friendship += bonus;
+                FriendshipTracker.OnStep(party[i], loyal);
             }
         }
 
@@ -120,6 +117,23 @@ namespace FieldFriends.Party
         {
             for (int i = 0; i < party.Count; i++)
                 party[i].FullHeal();
+        }
+
+        /// <summary>
+        /// Clear all party members (for new game / load).
+        /// </summary>
+        public void ClearParty()
+        {
+            party.Clear();
+            _stepsSinceLastSwap = 0;
+        }
+
+        /// <summary>
+        /// Get the lead non-resting creature (alias for GetLead).
+        /// </summary>
+        public CreatureInstance GetLeadCreature()
+        {
+            return GetLead();
         }
     }
 }

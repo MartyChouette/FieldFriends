@@ -1,3 +1,4 @@
+using FieldFriends.Core;
 using FieldFriends.Data;
 
 namespace FieldFriends.Party
@@ -23,10 +24,15 @@ namespace FieldFriends.Party
 
         // Friendship: hidden counter, increases by walking together
         public int Friendship;
-        public const int FriendshipUpgradeThreshold = 100;
 
+        public string Name => SpeciesName;
         public bool IsResting => State == CreatureState.Resting;
-        public bool IsAbilityUpgraded => HasUpgrade && Friendship >= FriendshipUpgradeThreshold;
+        public bool IsAbilityUpgraded => HasUpgrade && Friendship >= GameConstants.FriendshipUpgradeThreshold;
+
+        public bool HasAbility(AbilityID id)
+        {
+            return ActiveAbility == id || (IsAbilityUpgraded && UpgradedAbility == id);
+        }
 
         public AbilityID ActiveAbility =>
             IsAbilityUpgraded ? UpgradedAbility : Ability;
@@ -41,8 +47,8 @@ namespace FieldFriends.Party
             {
                 SpeciesName = def.Name,
                 Type = def.Type,
-                MaxHP = def.HP * 3,
-                CurrentHP = def.HP * 3,
+                MaxHP = def.HP * GameConstants.HPMultiplier,
+                CurrentHP = def.HP * GameConstants.HPMultiplier,
                 ATK = def.ATK,
                 DEF = def.DEF,
                 SPD = def.SPD,

@@ -1,6 +1,6 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using System;
+using System.Collections;
 using FieldFriends.Data;
 using FieldFriends.Core;
 
@@ -8,55 +8,56 @@ namespace FieldFriends.World
 {
     /// <summary>
     /// Manages area transitions and tracks the current area.
-    /// Triggers autosave on area change.
+    /// Uses AreaSceneSetup for procedural map generation instead of
+    /// scene loading. Triggers autosave on area change.
     /// </summary>
     public class AreaManager : MonoBehaviour
     {
         public static event Action<AreaID> OnAreaChanged;
 
-        [SerializeField] AreaID startingArea = AreaID.WillowEnd;
-
-        AreaID _currentArea;
+        AreaID _currentArea = AreaID.WillowEnd;
         bool _transitioning;
 
         public AreaID CurrentArea => _currentArea;
 
-        void Awake()
-        {
-            _currentArea = startingArea;
-        }
-
         public void TransitionTo(AreaID targetArea, Vector2Int spawnPos)
         {
             if (_transitioning) return;
+            StartCoroutine(TransitionRoutine(targetArea, spawnPos));
+        }
+
+        IEnumerator TransitionRoutine(AreaID targetArea, Vector2Int spawnPos)
+        {
             _transitioning = true;
 
+            // Fade out
+            if (ScreenTransition.Instance != null)
+                yield return ScreenTransition.Instance.FadeOut();
+
             _currentArea = targetArea;
+
+            // Build the area using AreaSceneSetup
+            var setup = AreaSceneSetup.Instance;
+            if (setup == null)
+            {
+                var obj = new GameObject("AreaSceneSetup");
+                setup = obj.AddComponent<AreaSceneSetup>();
+            }
+            setup.SetupArea(targetArea, spawnPos);
+
+            // Notify listeners (audio, encounter system, etc.)
             OnAreaChanged?.Invoke(_currentArea);
 
-            // Autosave on area change
-            Save.SaveManager saveManager = FindFirstObjectByType<Save.SaveManager>();
+            // Autosave
+            var saveManager = FindFirstObjectByType<Save.SaveManager>();
             if (saveManager != null)
-            {
                 saveManager.AutoSave();
-            }
 
-            var areaDef = AreaDatabase.Get(targetArea);
-            string sceneName = areaDef.Name.Replace(" ", "");
+            // Fade in
+            if (ScreenTransition.Instance != null)
+                yield return ScreenTransition.Instance.FadeIn();
 
-            // Load the scene, then position the player
-            SceneManager.LoadScene(sceneName);
-
-            // After scene loads, reposition player
-            SceneManager.sceneLoaded += (scene, mode) =>
-            {
-                GridMovement player = FindFirstObjectByType<GridMovement>();
-                if (player != null)
-                {
-                    player.SetGridPosition(spawnPos);
-                }
-                _transitioning = false;
-            };
+            _transitioning = false;
         }
 
         public AreaDatabase.AreaDef GetCurrentAreaDef()
